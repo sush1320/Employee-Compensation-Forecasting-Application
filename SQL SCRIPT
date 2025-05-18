@@ -1,0 +1,127 @@
+-- Table: Roles
+CREATE TABLE Roles (
+RoleID INT PRIMARY KEY IDENTITY,
+RoleName NVARCHAR(100) NOT NULL
+);
+
+-- Table: Locations
+CREATE TABLE Locations (
+LocationID INT PRIMARY KEY IDENTITY,
+LocationName NVARCHAR(100) NOT NULL
+);
+
+-- Table: Employees
+CREATE TABLE Employees (
+EmployeeID INT PRIMARY KEY IDENTITY,
+Name NVARCHAR(100) NOT NULL,
+RoleID INT FOREIGN KEY REFERENCES Roles(RoleID),
+LocationID INT FOREIGN KEY REFERENCES Locations(LocationID),
+ExperienceYears DECIMAL(4,2) NOT NULL,
+Compensation DECIMAL(18,2) NOT NULL,
+Status NVARCHAR(10) NOT NULL CHECK (Status IN ('Active', 'Inactive'))
+);
+
+-- Stored Procedure: Filter Employees
+CREATE PROCEDURE FilterEmployees
+@RoleID INT = NULL,
+@LocationID INT = NULL,
+@IncludeInactive BIT = 0
+AS BEGIN
+SELECT E.Name, R.RoleName, L.LocationName, E.ExperienceYears, E.Compensation, E.Status
+FROM Employees E
+JOIN Roles R ON E.RoleID = R.RoleID
+JOIN Locations L ON E.LocationID = L.LocationID
+WHERE (@RoleID IS NULL OR E.RoleID = @RoleID)
+AND (@LocationID IS NULL OR E.LocationID = @LocationID)
+AND (@IncludeInactive = 1 OR E.Status = 'Active');
+END;
+
+-- Stored Procedure: Get Average Compensation by Location
+CREATE PROCEDURE GetAverageCompensationByLocation
+@LocationID INT
+AS
+BEGIN
+SELECT AVG(Compensation)
+AS AverageCompensation
+FROM Employees
+WHERE LocationID = @LocationID;
+END;
+
+-- Stored Procedure: Get Compensation Comparison Across Locations
+CREATE PROCEDURE GetCompensationComparisonAcrossLocations
+AS
+BEGIN
+SELECT L.LocationName,
+AVG(E.Compensation) AS AverageCompensation
+FROM Employees E
+JOIN Locations L ON E.LocationID = L.LocationID
+GROUP BY L.LocationName;
+END;
+
+-- Stored Procedure: Group Employees by Experience
+CREATE PROCEDURE GroupEmployeesByExperience
+@GroupByField NVARCHAR(50) = NULL -- 'Location' or 'Role'
+AS
+BEGIN
+SELECT
+CASE
+WHEN ExperienceYears BETWEEN 0 AND 1 THEN '0-1'
+WHEN ExperienceYears BETWEEN 1 AND 2 THEN '1-2'
+WHEN ExperienceYears BETWEEN 2 AND 5 THEN '2-5'
+WHEN ExperienceYears BETWEEN 5 AND 10 THEN '5-10'
+ELSE '10+'
+END AS ExperienceRange,
+COUNT(*) AS EmployeeCount,
+CASE
+WHEN @GroupByField = 'Location' THEN L.LocationName
+WHEN @GroupByField = 'Role' THEN R.RoleName
+ELSE NULL
+END AS GroupValue
+FROM Employees E
+LEFT JOIN Locations L ON E.LocationID = L.LocationID
+LEFT JOIN Roles R ON E.RoleID = R.RoleID
+GROUP BY CASE
+WHEN ExperienceYears BETWEEN 0 AND 1 THEN '0-1'
+WHEN ExperienceYears BETWEEN 1 AND 2 THEN '1-2'
+WHEN ExperienceYears BETWEEN 2 AND 5 THEN '2-5'
+WHEN ExperienceYears BETWEEN 5 AND 10 THEN '5-10'
+ELSE '10+'
+END,
+CASE
+WHEN @GroupByField = 'Location' THEN L.LocationName
+WHEN @GroupByField = 'Role' THEN R.RoleName
+END;
+
+END;
+
+-- Stored Procedure: Apply Global Increment
+CREATE PROCEDURE ApplyGlobalIncrement
+@IncrementPercent DECIMAL(5,2)
+AS
+BEGIN
+UPDATE Employees
+SET Compensation = Compensation + (Compensation * @IncrementPercent / 100)
+WHERE Status = 'Active';
+END;
+
+-- Stored Procedure: Apply Custom Increment per Employee
+CREATE PROCEDURE ApplyCustomIncrement
+@EmployeeID INT,
+@CustomPercent DECIMAL(5,2)
+AS
+BEGIN
+UPDATE Employees
+SET Compensation = Compensation + (Compensation * @CustomPercent / 100)
+WHERE EmployeeID = @EmployeeID;
+END;
+
+-- Stored Procedure: Apply Custom Increment per Location
+CREATE PROCEDURE ApplyLocationIncrement
+@LocationID INT,
+@CustomPercent DECIMAL(5,2)
+AS
+BEGIN
+UPDATE Employees
+SET Compensation = Compensation + (Compensation * @CustomPercent / 100)
+WHERE LocationID = @LocationID AND Status = 'Active';
+END;
