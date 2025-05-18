@@ -1,0 +1,207 @@
+// Directory Structure
+// - src/
+//   - components/
+//     - EmployeeTable.jsx
+//     - FilterControls.jsx
+//     - ExperienceChart.jsx
+//     - IncrementForm.jsx
+//     - ExportCSV.jsx
+//   - services/
+//     - api.js
+//   - App.js
+//   - index.js
+
+// services/api.js
+import axios from 'axios';
+
+const API_BASE = 'http://localhost:5000/api/employee';
+
+export const filterEmployees = (roleId, locationId, includeInactive) => axios.get(`${API_BASE}/filter`, { params: { roleId, locationId, includeInactive } });
+export const getAverageCompensation = locationId => axios.get(`${API_BASE}/average/location/${locationId}`);
+export const getComparison = () => axios.get(`${API_BASE}/compare/locations`);
+export const groupByExperience = groupBy => axios.get(`${API_BASE}/grouped`, { params: { groupBy } });
+export const applyGlobalIncrement = percent => axios.post(`${API_BASE}/increment/global`, null, { params: { percent } });
+export const applyCustomIncrement = (employeeId, percent) => axios.post(`${API_BASE}/increment/custom`, null, { params: { employeeId, percent } });
+export const applyLocationIncrement = (locationId, percent) => axios.post(`${API_BASE}/increment/location`, null, { params: { locationId, percent } });
+export const getRoles = () => axios.get(`${API_BASE}/roles`);
+export const getLocations = () => axios.get(`${API_BASE}/locations`);
+
+// components/FilterControls.jsx
+import React from 'react';
+
+const FilterControls = ({ roles, locations, onFilterChange }) => (
+  <div className="flex gap-4">
+    <select onChange={e => onFilterChange('roleId', e.target.value)}>
+      <option value="">All Roles</option>
+      {roles.map(r => <option key={r.roleID} value={r.roleID}>{r.roleName}</option>)}
+    </select>
+    <select onChange={e => onFilterChange('locationId', e.target.value)}>
+      <option value="">All Locations</option>
+      {locations.map(l => <option key={l.locationID} value={l.locationID}>{l.locationName}</option>)}
+    </select>
+    <label>
+      <input type="checkbox" onChange={e => onFilterChange('includeInactive', e.target.checked)} /> Include Inactive
+    </label>
+  </div>
+);
+
+export default FilterControls;
+
+// components/EmployeeTable.jsx
+import React from 'react';
+
+const EmployeeTable = ({ employees }) => (
+  <table className="w-full border">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Role</th>
+        <th>Location</th>
+        <th>Experience</th>
+        <th>Compensation</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {employees.map(e => (
+        <tr key={e.employeeID}>
+          <td>{e.name}</td>
+          <td>{e.role.roleName}</td>
+          <td>{e.location.locationName}</td>
+          <td>{e.experienceYears}</td>
+          <td>{e.compensation}</td>
+          <td>{e.status}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+);
+
+export default EmployeeTable;
+
+// components/ExperienceChart.jsx
+import React, { useEffect, useState } from 'react';
+import { groupByExperience } from '../services/api';
+import { Bar } from 'react-chartjs-2';
+
+const ExperienceChart = ({ groupBy }) => {
+  const [data, setData] = useState([]);
+
+  useEffect(() => {
+    groupByExperience(groupBy).then(res => setData(res.data));
+  }, [groupBy]);
+
+  const chartData = {
+    labels: data.map(d => `${d.experienceRange} ${d.group ? `(${d.group})` : ''}`),
+    datasets: [{
+      label: 'Employee Count',
+      data: data.map(d => d.count),
+      backgroundColor: 'rgba(75,192,192,0.6)'
+    }]
+  };
+
+  return <Bar data={chartData} />;
+};
+
+export default ExperienceChart;
+
+// components/IncrementForm.jsx
+import React, { useState } from 'react';
+import { applyGlobalIncrement } from '../services/api';
+
+const IncrementForm = ({ onIncrement }) => {
+  const [percent, setPercent] = useState(5);
+
+  const handleSubmit = async e => {
+    e.preventDefault();
+    await applyGlobalIncrement(percent);
+    onIncrement();
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="flex gap-2 mt-4">
+      <input type="number" value={percent} onChange={e => setPercent(e.target.value)} />
+      <button type="submit">Apply Global Increment</button>
+    </form>
+  );
+};
+
+export default IncrementForm;
+
+// components/ExportCSV.jsx
+import React from 'react';
+
+const ExportCSV = ({ data }) => {
+  const handleExport = () => {
+    const headers = ['Name', 'Role', 'Location', 'Experience', 'Compensation', 'Status'];
+    const rows = data.map(e => [
+      e.name,
+      e.role.roleName,
+      e.location.locationName,
+      e.experienceYears,
+      e.compensation,
+      e.status
+    ]);
+
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'employee_data.csv');
+    link.click();
+  };
+
+  return <button onClick={handleExport} className="mt-2">Export CSV</button>;
+};
+
+export default ExportCSV;
+
+// App.js
+import React, { useEffect, useState } from 'react';
+import './App.css';
+import { filterEmployees, getRoles, getLocations } from './services/api';
+import EmployeeTable from './components/EmployeeTable';
+import FilterControls from './components/FilterControls';
+import IncrementForm from './components/IncrementForm';
+import ExperienceChart from './components/ExperienceChart';
+import ExportCSV from './components/ExportCSV';
+
+function App() {
+  const [employees, setEmployees] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [filters, setFilters] = useState({ roleId: '', locationId: '', includeInactive: false });
+
+  const loadEmployees = () => {
+    filterEmployees(filters.roleId, filters.locationId, filters.includeInactive)
+      .then(res => setEmployees(res.data));
+  };
+
+  useEffect(() => {
+    getRoles().then(res => setRoles(res.data));
+    getLocations().then(res => setLocations(res.data));
+  }, []);
+
+  useEffect(() => {
+    loadEmployees();
+  }, [filters]);
+
+  const handleFilterChange = (key, value) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  return (
+    <div className="p-4">
+      <h1 className="text-xl mb-4">Employee Compensation Dashboard</h1>
+      <FilterControls roles={roles} locations={locations} onFilterChange={handleFilterChange} />
+      <IncrementForm onIncrement={loadEmployees} />
+      <ExportCSV data={employees} />
+      <EmployeeTable employees={employees} />
+      <h2 className="text-lg mt-4">Experience Chart</h2>
+      <ExperienceChart groupBy="Location" />
+    </div>
+  );
+}
+
+export default App;
